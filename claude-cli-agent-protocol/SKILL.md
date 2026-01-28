@@ -55,10 +55,16 @@ When a tool needs approval, CLI emits:
     "subtype": "can_use_tool",
     "tool_name": "Bash",
     "input": {"command": "git add -A", "description": "Stage all changes"},
+    "decision_reason": "Command not in allowlist",
     "tool_use_id": "toolu_xyz"
   }
 }
 ```
+
+Fields:
+- `tool_name`: The tool being invoked (Bash, Read, Edit, Write, etc.)
+- `input`: Tool-specific input (Bash has `command` and `description`, file tools have `file_path`)
+- `decision_reason`: Why permission is required (e.g., "Path is outside allowed working directories")
 
 Allow (must include `updatedInput` with the original or modified input):
 
