@@ -1,16 +1,14 @@
-# plan-b
+# skills
 
-Planning skill that produces a single concise plan by synthesizing multiple subagent plan variants.
+Local Codex skills for this workspace. Each skill lives in its own folder with a `SKILL.md` (the source instructions) and a short `README.md` for quick orientation.
 
-## What it does
-- Triggers on user intent like "I want to make..." / "I need to do..."
-- Uses a read-only scan and minimal questions (same as create-plan)
-- Spawns 3+ subagents to draft plan variants, then judges and merges
-- Always includes an ASCII diagram (flow/architecture/UI mockup)
+## Skills
+
+- `plan-b` — Planning skill that produces a single concise plan by synthesizing multiple subagent plan variants.
+- `claude-cli-agent-protocol` — Guidance for integrating Claude Code CLI in agent/headless mode and handling NDJSON + tool approvals.
+- `qt-qml-attachments` — Guidance for Qt/QML chat attachment rows, wrap behavior, and bubble sizing quirks.
 
 ## How to use
-Ask for a plan or describe a build task. Example prompts:
-- "I want to make a CLI tool that ..."
-- "I need to do a migration from ..."
 
-The assistant returns a single plan that follows the Plan template inside `plan-b/SKILL.md`.
+- Refer to a skill by name (e.g., “use plan-b”) or ask a task that matches its description.
+- Read the per-skill `README.md` for a quick summary, or open the `SKILL.md` for full instructions.

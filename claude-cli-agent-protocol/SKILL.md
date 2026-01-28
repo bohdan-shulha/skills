@@ -1,6 +1,7 @@
 ---
 name: claude-cli-agent-protocol
-description: Guidance for integrating Claude Code CLI in agent/headless mode: required stream-json flags, NDJSON protocol, control_request/control_response tool approvals, and process management. Use when building a host that drives Claude CLI or troubleshooting permission prompts and tool approvals.
+description: >-
+  Guidance for integrating Claude Code CLI in agent/headless mode: required stream-json flags, NDJSON protocol, control_request/control_response tool approvals, and process management. Use when building a host that drives Claude CLI or troubleshooting permission prompts and tool approvals.
 ---
 
 # Claude CLI Agent Protocol
