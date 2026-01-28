@@ -60,7 +60,7 @@ When a tool needs approval, CLI emits:
 }
 ```
 
-Allow:
+Allow (must include `updatedInput` with the original or modified input):
 
 ```json
 {
@@ -68,12 +68,15 @@ Allow:
   "response": {
     "subtype": "success",
     "request_id": "req_abc123",
-    "response": {"behavior": "allow"}
+    "response": {
+      "behavior": "allow",
+      "updatedInput": {"command": "git add -A", "description": "Stage all changes"}
+    }
   }
 }
 ```
 
-Deny:
+Deny (must include `message`):
 
 ```json
 {
@@ -88,6 +91,8 @@ Deny:
 
 Key rules:
 - `request_id` must match the incoming request.
+- For `allow`: `updatedInput` is required (pass the original `input` from the request, or a modified version).
+- For `deny`: `message` is required (cannot be omitted).
 - CLI blocks waiting for a response (default timeout ~60s).
 
 ## Permission Modes vs prompt tool
