@@ -159,6 +159,143 @@ or `--debug`.
 - CLI reference: https://code.claude.com/docs/en/cli-reference
 - Stream-json / control protocol gist: https://gist.github.com/SamSaffron/603648958a8c18ceae34939a8951d417
 
+## Stdout Message Types (Complete Reference)
+
+Source: `agentide/src/claude_process.cpp` + SDK inspection
+
+| Type | Description |
+|------|-------------|
+| `system` | Session init (model, tools, session_id, cwd) |
+| `assistant` | Full response with content blocks |
+| `content_block_delta` | Streaming text chunk |
+| `result` | Response complete with cost/tokens |
+| `control_request` | Tool approval request |
+| `user` | Tool results echoed back |
+
+### `assistant` message structure
+
+```json
+{
+  "type": "assistant",
+  "message": {
+    "role": "assistant",
+    "content": [
+      {"type": "text", "text": "..."},
+      {"type": "tool_use", "id": "toolu_xxx", "name": "Bash", "input": {...}}
+    ]
+  },
+  "parent_tool_use_id": "toolu_parent"  // present for subagent responses
+}
+```
+
+Content block types:
+- `text` - Text content with `text` field
+- `tool_use` - Tool invocation with `id`, `name`, `input`
+
+### `content_block_delta` (streaming)
+
+```json
+{
+  "type": "content_block_delta",
+  "delta": {
+    "type": "text_delta",
+    "text": "chunk of text"
+  }
+}
+```
+
+Delta types:
+- `text_delta` - Streaming text with `text` field
+
+### `result` message
+
+Emitted when response is complete. Contains `total_cost_usd`, token counts, `permission_denials`.
+
+## Subagent Protocol
+
+The `Task` tool spawns subagents. Parent tracks responses via `parent_tool_use_id`.
+
+Task tool input:
+```json
+{
+  "type": "tool_use",
+  "id": "toolu_abc",
+  "name": "Task",
+  "input": {
+    "subagent_type": "Explore",
+    "description": "Find auth handlers",
+    "prompt": "..."
+  }
+}
+```
+
+Subagent responses include `parent_tool_use_id` matching the Task's `id`:
+```json
+{
+  "type": "assistant",
+  "parent_tool_use_id": "toolu_abc",
+  "message": {"content": [...]}
+}
+```
+
+## Control Request Subtypes
+
+| Subtype | Purpose |
+|---------|---------|
+| `can_use_tool` | Request approval for tool execution |
+| `set_permission_mode` | Change permission mode mid-session |
+
+## Tool Names
+
+Tools available in Claude CLI (from system prompt tool definitions):
+
+| Tool | Input fields |
+|------|--------------|
+| `Bash` | `command`, `description`, `timeout`, `run_in_background` |
+| `Read` | `file_path`, `offset`, `limit` |
+| `Write` | `file_path`, `content` |
+| `Edit` | `file_path`, `old_string`, `new_string`, `replace_all` |
+| `Glob` | `pattern`, `path` |
+| `Grep` | `pattern`, `path`, `glob`, `type`, `output_mode`, `-A`, `-B`, `-C`, `-i`, `-n` |
+| `WebFetch` | `url`, `prompt` |
+| `WebSearch` | `query`, `allowed_domains`, `blocked_domains` |
+| `Task` | `subagent_type`, `description`, `prompt`, `model`, `run_in_background`, `resume` |
+| `TaskOutput` | `task_id`, `block`, `timeout` |
+| `TaskStop` | `task_id` |
+| `NotebookEdit` | `notebook_path`, `new_source`, `cell_id`, `cell_type`, `edit_mode` |
+| `AskUserQuestion` | `questions` (array with `question`, `header`, `options`, `multiSelect`) |
+| `EnterPlanMode` | (no params) |
+| `ExitPlanMode` | `allowedPrompts`, `pushToRemote` |
+| `Skill` | `skill`, `args` |
+| `TaskCreate` | `subject`, `description`, `activeForm`, `metadata` |
+| `TaskGet` | `taskId` |
+| `TaskUpdate` | `taskId`, `status`, `subject`, `description`, `owner`, `addBlocks`, `addBlockedBy` |
+| `TaskList` | (no params) |
+
+## Process Interruption
+
+**No in-protocol abort mechanism exists.** CLI handles OS signals for shutdown.
+
+To interrupt an active response:
+1. Send `SIGTERM` (graceful shutdown, triggers CLI cleanup)
+2. Wait ~500ms
+3. Send `SIGKILL` if still running
+4. Clear buffers, restart fresh process
+
+```cpp
+m_process->terminate();  // SIGTERM
+m_process->waitForFinished(500);
+if (m_process->state() != QProcess::NotRunning)
+    m_process->kill();  // SIGKILL
+```
+
+Note: `control_cancel_request` only cancels pending `control_request` approvals, NOT active generation.
+
+Source: Claude CLI SDK v2.1.23 signal handlers:
+```javascript
+process.on("SIGINT", () => { ... Jq(0) })  // graceful exit
+```
+
 ## SDK Protocol Discovery (unknown behaviors/messages)
 
 If the CLI emits unexpected message types or behaviors, inspect the TypeScript SDK:
