@@ -116,7 +116,7 @@ Host                                      CLI
 
 ## Interrupt During Tool Approval
 
-If a `control_request` (can_use_tool) is pending when you want to interrupt:
+When a `control_request` (can_use_tool) is pending and you want to interrupt, use **deny with interrupt flag**:
 
 ```
 Host                                      CLI
@@ -124,15 +124,15 @@ Host                                      CLI
   │  ◄──── control_request ───────────────  │  (waiting for approval)
   │        {request_id: "req_001"}          │
   │                                         │
-  │  ──── control_cancel_request ─────►     │  (cancel the approval)
-  │       {request_id: "req_001"}           │
+  │  ──── control_response ───────────►     │  (deny + interrupt)
+  │       {behavior: "deny",                │
+  │        message: "...",                  │
+  │        interrupt: true}                 │
   │                                         │
-  │  ──── control_request ────────────►     │  (then interrupt)
-  │       {subtype: "interrupt"}            │
-  │                                         │
-  │  ◄──── control_response ──────────────  │
-  │  ◄──── result ────────────────────────  │
+  │  ◄──── result ────────────────────────  │  (turn ends immediately)
 ```
+
+This denies the pending tool AND aborts the current turn in a single message.
 
 ---
 
@@ -394,6 +394,29 @@ When CLI sends `control_request` with `subtype: "can_use_tool"`:
 }
 ```
 
+**Deny and Abort Turn** (add `interrupt: true` to also abort the current turn):
+```json
+{
+  "type": "control_response",
+  "response": {
+    "subtype": "success",
+    "request_id": "req_abc123",
+    "response": {
+      "behavior": "deny",
+      "message": "User denied and wants to stop",
+      "interrupt": true
+    }
+  }
+}
+```
+
+When `interrupt: true` is set, the CLI will:
+1. Deny the tool execution
+2. Call `abortController.abort()` to stop the current turn
+3. Emit a `result` message
+
+This is useful when the user wants to both reject the tool and redirect Claude to do something else.
+
 **Error**:
 ```json
 {
@@ -403,17 +426,6 @@ When CLI sends `control_request` with `subtype: "can_use_tool"`:
     "request_id": "req_abc123",
     "error": "Timeout waiting for user"
   }
-}
-```
-
-## `control_cancel_request` - Cancel Pending Request
-
-Cancels a pending `control_request` (e.g., tool approval timeout). **No response is sent.**
-
-```json
-{
-  "type": "control_cancel_request",
-  "request_id": "req_abc123"
 }
 ```
 
