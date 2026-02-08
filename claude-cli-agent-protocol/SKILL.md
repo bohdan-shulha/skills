@@ -1,215 +1,52 @@
 ---
 name: claude-cli-agent-protocol
 description: >-
-  Guidance for integrating Claude Code CLI in agent/headless mode: required stream-json flags, NDJSON protocol, control_request/control_response tool approvals, and process management. Use when building a host that drives Claude CLI or troubleshooting permission prompts and tool approvals.
+  Guidance for integrating Claude Code CLI in headless/agent mode using stream-json NDJSON: required flags, replay semantics, partial stream_event handling, control_request/control_response approvals, control cancellation/interrupt flows, and runtime liveness mapping. Use when building or debugging hosts that drive Claude CLI and must keep UI state accurate (thinking/pending/streaming/approval/result).
 ---
 
 # Claude CLI Agent Protocol
 
 ## Overview
 
-Enable reliable, bidirectional integration with Claude Code CLI via NDJSON, including tool approval handling, permission mode control, and long-lived process management.
+Integrate Claude Code CLI via NDJSON in a way that preserves true runtime state in the host UI:
+- parse all relevant stdout message types
+- send correctly shaped stdin control messages
+- handle replay and partial-stream behavior explicitly
+- keep interrupt and approval flows consistent
+
+This skill is optimized for host builders who need reliable liveness, queueing, replay dedup, and approval UX.
 
 ## Required CLI Flags
 
 ```bash
 claude \
+  -p \
   --output-format stream-json \
   --input-format stream-json \
   --verbose \
   --permission-prompt-tool stdio
 ```
 
-Notes:
-- `--permission-prompt-tool stdio` enables control_request/control_response for tool approvals
-- `--verbose` includes system messages, hook events, and stream events
-- `--replay-user-messages` echoes user messages back on stdout for acknowledgment
-- Do not use `-p` with a prompt; send user messages via stdin
+Optional but important:
+- `--replay-user-messages`
+  - Re-emits user stdin messages on stdout for acknowledgment.
+  - Echoed user messages include `isReplay`, `uuid`, and `parent_tool_use_id`.
+- `--include-partial-messages`
+  - Required if your host expects `stream_event` partial deltas (`message_start`, `content_block_delta`, etc.).
+  - Without this flag, many runs emit only final `assistant` + `result` turn outputs.
 
-## Message Protocol (NDJSON)
+Important flag constraints:
+- `--input-format=stream-json` requires `--output-format=stream-json`.
+- `--replay-user-messages` requires stream-json input and output.
+- `--include-partial-messages` works with `--print` and stream-json output.
+- Do not rely on prompt positional arg when building a long-lived host; send `user` envelopes via stdin.
 
-All stdin/stdout messages are newline-delimited JSON with a `type` field.
+## Protocol Shape (NDJSON)
 
----
+All messages are newline-delimited JSON objects with top-level `type`.
 
-# Request Lifecycles
+For streaming, the runtime envelope is:
 
-## Normal Request (Init → Result)
-
-```
-Host                                      CLI
-  │                                         │
-  │  ──── Start process with flags ────►    │
-  │                                         │
-  │  ◄──── system {subtype: "init"} ──────  │
-  │                                         │
-  │  ──── user message ───────────────►     │
-  │                                         │
-  │  ◄──── stream_event (deltas) ─────────  │
-  │  ◄──── assistant ─────────────────────  │
-  │                                         │
-  │  ◄──── control_request ───────────────  │  (tool approval)
-  │        {subtype: "can_use_tool"}        │
-  │                                         │
-  │  ──── control_response ───────────►     │
-  │       {behavior: "allow"}               │
-  │                                         │
-  │  ◄──── user {tool_result} ────────────  │
-  │  ◄──── assistant (final) ─────────────  │
-  │                                         │
-  │  ◄──── result {subtype: "success"} ───  │
-  │                                         │
-  │  ──── user message (next turn) ────►    │  (process stays alive)
-```
-
-**Sequence:**
-1. `system` (init) — session info, tools, model
-2. Host sends `user` message
-3. `stream_event` messages (real-time deltas)
-4. `assistant` message (complete response with tool_use blocks)
-5. `control_request` for each tool needing approval
-6. Host sends `control_response` (allow/deny)
-7. `user` message (tool results echoed back)
-8. More `assistant` messages if multi-turn
-9. `result` — turn complete, cost/usage data
-
-## Interrupted Request
-
-```
-Host                                      CLI
-  │                                         │
-  │  ◄──── system {subtype: "init"} ──────  │
-  │                                         │
-  │  ──── user message ───────────────►     │
-  │       "Refactor entire codebase"        │
-  │                                         │
-  │  ◄──── stream_event ──────────────────  │
-  │  ◄──── assistant ─────────────────────  │
-  │  ◄──── control_request (tool) ────────  │
-  │  ──── control_response (allow) ────►    │
-  │  ◄──── user {tool_result} ────────────  │
-  │  ◄──── stream_event ──────────────────  │  (working...)
-  │                                         │
-  │  ════ USER INTERRUPTS ════              │
-  │                                         │
-  │  ──── control_request ────────────►     │
-  │       {subtype: "interrupt"}            │
-  │                                         │
-  │  ◄──── control_response ──────────────  │
-  │        {subtype: "success"}             │
-  │                                         │
-  │  ◄──── result ────────────────────────  │  (turn ends)
-  │                                         │
-  │  ──── user message ───────────────►     │  (new instruction)
-  │       "Actually, just fix the bug"      │
-  │                                         │
-  │  ◄──── stream_event ──────────────────  │
-  │  ◄──── assistant ─────────────────────  │
-  │  ◄──── result {subtype: "success"} ───  │
-```
-
-**Key points:**
-- Interrupt is graceful — process stays alive, context preserved
-- CLI acknowledges with `control_response`
-- `result` emitted after interrupt (partial work visible in prior messages)
-- Send new `user` message to redirect agent
-
-## Interrupt During Tool Approval
-
-When a `control_request` (can_use_tool) is pending and you want to interrupt, use **deny with interrupt flag**:
-
-```
-Host                                      CLI
-  │                                         │
-  │  ◄──── control_request ───────────────  │  (waiting for approval)
-  │        {request_id: "req_001"}          │
-  │                                         │
-  │  ──── control_response ───────────►     │  (deny + interrupt)
-  │       {behavior: "deny",                │
-  │        message: "...",                  │
-  │        interrupt: true}                 │
-  │                                         │
-  │  ◄──── result ────────────────────────  │  (turn ends immediately)
-```
-
-This denies the pending tool AND aborts the current turn in a single message.
-
----
-
-# Stdout Message Types (CLI → Host)
-
-## `system` - Session and Status Messages
-
-| Subtype | Description |
-|---------|-------------|
-| `init` | Session initialization with model, tools, session_id, cwd |
-| `api_error` | API error occurred |
-| `informational` | Informational message |
-| `status` | Status update |
-| `hook_started` | Hook execution started |
-| `hook_progress` | Hook execution progress |
-| `hook_response` | Hook execution response |
-| `stop_hook_summary` | Summary when hooks are stopped |
-| `task_notification` | Background task notification |
-| `turn_duration` | Turn timing information |
-| `compact_boundary` | Context compaction boundary |
-| `microcompact_boundary` | Micro-compaction boundary |
-| `local_command` | Local slash command execution |
-
-Example `init`:
-```json
-{
-  "type": "system",
-  "subtype": "init",
-  "session_id": "abc123",
-  "cwd": "/path/to/project",
-  "model": "claude-sonnet-4-20250514",
-  "tools": [{"name": "Bash", "type": "computer_use"}, ...]
-}
-```
-
-## `assistant` - Claude's Response
-
-```json
-{
-  "type": "assistant",
-  "message": {
-    "id": "msg_xxx",
-    "role": "assistant",
-    "content": [
-      {"type": "text", "text": "Here's the solution..."},
-      {"type": "tool_use", "id": "toolu_xxx", "name": "Bash", "input": {"command": "ls"}}
-    ],
-    "usage": {"input_tokens": 100, "output_tokens": 50}
-  },
-  "parent_tool_use_id": null,
-  "session_id": "abc123"
-}
-```
-
-Content block types:
-- `text` - Text content with `text` field
-- `tool_use` - Tool invocation with `id`, `name`, `input`
-- `thinking` - Extended thinking content (when enabled)
-
-## `user` - Tool Results
-
-Echoed when tool execution completes:
-```json
-{
-  "type": "user",
-  "message": {
-    "role": "user",
-    "content": [
-      {"type": "tool_result", "tool_use_id": "toolu_xxx", "content": "output here"}
-    ]
-  }
-}
-```
-
-## `stream_event` - Streaming Events
-
-Real-time content deltas during generation:
 ```json
 {
   "type": "stream_event",
@@ -221,150 +58,286 @@ Real-time content deltas during generation:
 }
 ```
 
-Event types:
-- `message_start` - Message generation started
-- `content_block_start` - New content block
-- `content_block_delta` - Content chunk (text_delta, input_json_delta)
-- `content_block_stop` - Content block complete
-- `message_delta` - Message-level updates (stop_reason, usage)
-- `message_stop` - Message complete
+Do not assume top-level `content_block_delta` envelopes in host parsing.
 
-## `result` - Completion Message
+---
 
-| Subtype | Description |
-|---------|-------------|
-| `success` | Successful completion |
-| `error_during_execution` | Error during tool execution |
-| `error_max_turns` | Maximum turns exceeded |
-| `error_max_budget_usd` | Budget limit exceeded |
-| `error_max_structured_output_retries` | Structured output validation failed |
+# Emission Semantics (Critical)
 
-Example:
+## Partial output behavior
+
+- With `--include-partial-messages`: host receives `stream_event` payloads.
+- Without it: host often receives only final `assistant` and `result` messages.
+
+Host impact:
+- If UI "Thinking/Writing" depends only on partial deltas, it may appear idle/blank unless `--include-partial-messages` is enabled.
+
+## Replay behavior
+
+With `--replay-user-messages`, echoed user messages include replay markers:
+
+```json
+{
+  "type": "user",
+  "message": {"role": "user", "content": [{"type": "text", "text": "ping"}]},
+  "session_id": "...",
+  "parent_tool_use_id": null,
+  "uuid": "...",
+  "isReplay": true
+}
+```
+
+Host rule:
+- Deduplicate using `uuid` (plus turn/session context if needed).
+
+## Result semantics
+
+`result.subtype == "success"` does not mean no error by itself.
+Always evaluate `is_error` as authoritative:
+
 ```json
 {
   "type": "result",
   "subtype": "success",
-  "duration_ms": 5000,
-  "duration_api_ms": 4500,
-  "num_turns": 3,
-  "total_cost_usd": 0.05,
-  "usage": {"input_tokens": 1000, "output_tokens": 500},
-  "session_id": "abc123",
-  "is_error": false
+  "is_error": true,
+  "result": "Not logged in - Please run /login"
 }
 ```
 
-## `control_request` - Approval Required
-
-Sent when CLI needs host approval (tool execution, etc.):
-```json
-{
-  "type": "control_request",
-  "request_id": "req_abc123",
-  "request": {
-    "subtype": "can_use_tool",
-    "tool_name": "Bash",
-    "input": {"command": "rm -rf /tmp/test", "description": "Delete test files"},
-    "tool_use_id": "toolu_xyz"
-  }
-}
-```
-
-## `keep_alive` - Connection Ping
-
-```json
-{"type": "keep_alive"}
-```
+This can also accompany non-zero process exit status.
 
 ---
 
-# Stdin Message Types (Host → CLI)
+# Request Lifecycles
 
-## `user` - Send User Message
+## Normal request (init -> response -> result)
+
+1. Host starts process.
+2. CLI emits `system` `subtype:init`.
+3. Host sends `user` stdin message.
+4. CLI may emit `stream_event` messages (if partial enabled).
+5. CLI emits `assistant` message(s).
+6. CLI may emit `control_request` (tool approval).
+7. Host sends `control_response`.
+8. CLI emits `user` tool_result echoes.
+9. CLI emits terminal `result`.
+
+## Interrupted request
+
+Preferred:
+1. Host sends stdin `control_request` with `request.subtype: "interrupt"`.
+2. CLI emits `control_response` success.
+3. CLI emits `result` for terminated turn.
+4. Host sends next queued `user` message.
+
+## Interrupt during pending tool approval
+
+Two valid strategies:
+
+1. Cancel then interrupt:
+- Send `control_cancel_request` for pending `request_id`.
+- Send `control_request` interrupt.
+
+2. Deny + interrupt in one response:
+- Send `control_response` with `behavior: "deny"` and `interrupt: true`.
+
+Pick one strategy and apply it consistently.
+
+---
+
+# Stdout Message Types (CLI -> Host)
+
+These are the host-relevant types to parse.
+
+## `system`
+
+Common subtypes:
+- `init`
+- `status`
+- `informational`
+- `api_error`
+- `hook_started`
+- `hook_progress`
+- `hook_response`
+- `stop_hook_summary`
+- `task_notification`
+- `turn_duration`
+- `compact_boundary`
+- `microcompact_boundary`
+- `local_command`
+
+Typical `init` fields include: `cwd`, `session_id`, `tools`, `mcp_servers`, `model`, `permissionMode`, `slash_commands`, `claude_code_version`, `agents`, `skills`, `plugins`, `uuid`.
+
+## `assistant`
+
+Contains complete assistant message blocks:
+- `text`
+- `tool_use`
+- `thinking` (if enabled)
+
+May include `parent_tool_use_id` for subagent/tool-threaded messages.
+
+## `user`
+
+Used for:
+- tool result echo blocks (`type: tool_result`)
+- replayed user echo events when replay flag is enabled (`isReplay: true`)
+
+## `stream_event`
+
+Contains nested `event` payload.
+
+Event types:
+- `message_start`
+- `content_block_start`
+- `content_block_delta`
+- `content_block_stop`
+- `message_delta`
+- `message_stop`
+
+Observed delta types:
+- `text_delta`
+- `input_json_delta`
+- `thinking_delta`
+- `signature_delta`
+- `citations_delta`
+
+## `control_request`
+
+Approval or control prompt from CLI, including:
+- `request.subtype: "can_use_tool"`
+- `request_id`
+- tool details (`tool_name`, `input`, `tool_use_id`, optional `decision_reason`)
+
+## `control_response`
+
+Control command acknowledgment emitted by CLI (for host-issued control requests like interrupt/set mode/model).
+
+## `control_cancel_request`
+
+Cancellation signal path exists in protocol surface for pending control requests.
+Treat as control-plane event.
+
+## `result`
+
+Terminal turn summary with:
+- `subtype`
+- `is_error`
+- token/cost/turn metadata
+
+Result subtypes:
+- `success`
+- `error_during_execution`
+- `error_max_turns`
+- `error_max_budget_usd`
+- `error_max_structured_output_retries`
+
+## `keep_alive`
+
+Heartbeat ping message.
+
+## `tool_use_summary`
+
+Optional summarized tool-use event stream for condensed status rendering.
+
+## `auth_status`
+
+Optional authentication status updates.
+
+## `streamlined_text` and `streamlined_tool_use_summary`
+
+Optional condensed output channels. Useful for thin UIs; safe to ignore in fully structured hosts.
+
+## Observed Type and Subtype Surface (2.1.37)
+
+Observed host-facing top-level `type` values (runtime + binary scan):
+- `system`
+- `assistant`
+- `user`
+- `stream_event`
+- `result`
+- `control_request`
+- `control_response`
+- `control_cancel_request`
+- `keep_alive`
+- `tool_use_summary`
+- `auth_status`
+- `streamlined_text`
+- `streamlined_tool_use_summary`
+
+Observed protocol-relevant `subtype` values from local 2.1.37 binary:
+- `api_error`
+- `can_use_tool`
+- `compact_boundary`
+- `error`
+- `error_during_execution`
+- `error_max_budget_usd`
+- `error_max_structured_output_retries`
+- `error_max_turns`
+- `hook_callback`
+- `hook_progress`
+- `hook_response`
+- `hook_started`
+- `informational`
+- `init`
+- `interrupt`
+- `local_command`
+- `mcp_message`
+- `microcompact_boundary`
+- `status`
+- `stop_hook_summary`
+- `success`
+- `task_notification`
+- `turn_duration`
+
+---
+
+# Stdin Message Types (Host -> CLI)
+
+## `user`
 
 ```json
 {
   "type": "user",
   "message": {
     "role": "user",
-    "content": [{"type": "text", "text": "Your prompt here"}]
+    "content": [{"type": "text", "text": "Your prompt"}]
   },
-  "uuid": "optional-unique-id"
+  "uuid": "optional-client-uuid"
 }
 ```
 
-## `control_request` - Host Control Commands
-
-| Subtype | Description | Response |
-|---------|-------------|----------|
-| `interrupt` | Abort current operation | `success` |
-| `initialize` | Initialize with SDK MCP servers | `success` with init info |
-| `set_permission_mode` | Change mode (plan, default, etc.) | `success` |
-| `set_model` | Change model | `success` |
-| `set_max_thinking_tokens` | Set thinking token limit | `success` |
-| `mcp_status` | Get MCP server status | `success` with `mcpServers` |
-| `mcp_message` | Send message to MCP server | `success` |
-| `mcp_set_servers` | Configure MCP servers | `success` with result |
-| `mcp_reconnect` | Reconnect to MCP server | `success` or `error` |
-| `mcp_toggle` | Enable/disable MCP server | `success` or `error` |
-| `rewind_files` | Rewind file changes | `success` with result |
-
-### Interrupt Example
-
-Send:
-```json
-{
-  "type": "control_request",
-  "request_id": "int_001",
-  "request": {"subtype": "interrupt"}
-}
-```
-
-Receive:
-```json
-{
-  "type": "control_response",
-  "response": {
-    "subtype": "success",
-    "request_id": "int_001",
-    "response": {}
-  }
-}
-```
-
-### Set Permission Mode Example
+## `control_request`
 
 ```json
 {
   "type": "control_request",
-  "request_id": "mode_001",
+  "request_id": "req_123",
   "request": {
-    "subtype": "set_permission_mode",
-    "mode": "plan"
+    "subtype": "interrupt"
   }
 }
 ```
 
-Modes: `default`, `plan`, `bypassPermissions`, `acceptEdits`
+Supported subtypes (host-facing):
+- `interrupt`
+- `initialize`
+- `set_permission_mode`
+- `set_model`
+- `set_max_thinking_tokens`
+- `mcp_status`
+- `mcp_message`
+- `mcp_set_servers`
+- `mcp_reconnect`
+- `mcp_toggle`
+- `rewind_files`
 
-### Set Model Example
+## `control_response`
 
-```json
-{
-  "type": "control_request",
-  "request_id": "model_001",
-  "request": {
-    "subtype": "set_model",
-    "model": "claude-opus-4-20250514"
-  }
-}
-```
+Use for answering `can_use_tool` approval requests.
 
-## `control_response` - Tool Approval Response
+Allow:
 
-When CLI sends `control_request` with `subtype: "can_use_tool"`:
-
-**Allow** (must include `updatedInput`):
 ```json
 {
   "type": "control_response",
@@ -373,13 +346,14 @@ When CLI sends `control_request` with `subtype: "can_use_tool"`:
     "request_id": "req_abc123",
     "response": {
       "behavior": "allow",
-      "updatedInput": {"command": "ls -la", "description": "List files"}
+      "updatedInput": {"command": "ls -la"}
     }
   }
 }
 ```
 
-**Deny** (must include `message`):
+Deny:
+
 ```json
 {
   "type": "control_response",
@@ -388,13 +362,14 @@ When CLI sends `control_request` with `subtype: "can_use_tool"`:
     "request_id": "req_abc123",
     "response": {
       "behavior": "deny",
-      "message": "User denied this action"
+      "message": "User denied"
     }
   }
 }
 ```
 
-**Deny and Abort Turn** (add `interrupt: true` to also abort the current turn):
+Deny + interrupt:
+
 ```json
 {
   "type": "control_response",
@@ -410,28 +385,22 @@ When CLI sends `control_request` with `subtype: "can_use_tool"`:
 }
 ```
 
-When `interrupt: true` is set, the CLI will:
-1. Deny the tool execution
-2. Call `abortController.abort()` to stop the current turn
-3. Emit a `result` message
+## `control_cancel_request`
 
-This is useful when the user wants to both reject the tool and redirect Claude to do something else.
+Cancel pending control request by `request_id`.
 
-**Error**:
 ```json
 {
-  "type": "control_response",
-  "response": {
-    "subtype": "error",
-    "request_id": "req_abc123",
-    "error": "Timeout waiting for user"
-  }
+  "type": "control_cancel_request",
+  "request_id": "req_abc123"
 }
 ```
 
 ---
 
 # Tool Names and Input Fields
+
+Common tool names and key inputs:
 
 | Tool | Input Fields |
 |------|--------------|
@@ -447,69 +416,53 @@ This is useful when the user wants to both reject the tool and redirect Claude t
 | `TaskOutput` | `task_id`, `block`, `timeout` |
 | `TaskStop` | `task_id` |
 | `NotebookEdit` | `notebook_path`, `new_source`, `cell_id`, `cell_type`, `edit_mode` |
-| `AskUserQuestion` | `questions` array |
-| `EnterPlanMode` | (no params) |
+| `AskUserQuestion` | `questions` |
+| `EnterPlanMode` | no params |
 | `ExitPlanMode` | `allowedPrompts`, `pushToRemote` |
 | `Skill` | `skill`, `args` |
 | `TaskCreate` | `subject`, `description`, `activeForm`, `metadata` |
 | `TaskGet` | `taskId` |
 | `TaskUpdate` | `taskId`, `status`, `subject`, `description`, `owner`, `addBlocks`, `addBlockedBy` |
-| `TaskList` | (no params) |
+| `TaskList` | no params |
+
+---
+
+# Liveness Mapping for Host UI
+
+Recommended runtime state mapping:
+- `process started` -> `starting`
+- `system:init` -> `ready`
+- `stream_event` or in-flight assistant turn -> `thinking/streaming`
+- `control_request can_use_tool` -> `awaiting_approval`
+- `result` -> `idle` (or `error` if `is_error=true`)
+- process exit / fatal stderr / repeated auth failures -> `disconnected/error`
+
+Always expose last event timestamp so users can trust the session is alive.
 
 ---
 
 # Process Interruption
 
-Two mechanisms exist:
+Preferred: protocol interrupt (`control_request` `subtype:interrupt`).
 
-## 1. Protocol-based Interrupt (Recommended)
-
-Send `control_request` with `subtype: "interrupt"`:
-```json
-{
-  "type": "control_request",
-  "request_id": "int_001",
-  "request": {"subtype": "interrupt"}
-}
-```
-
-This aborts the current operation and receives a `control_response` confirmation.
-
-## 2. OS Signal (Fallback)
+Fallback: OS signal only if protocol interrupt path fails or times out.
 
 ```cpp
-// Send SIGINT for graceful abort
-kill(m_process->processId(), SIGINT);
-
-// Or terminate then kill
-m_process->terminate();  // SIGTERM
-m_process->waitForFinished(500);
-if (m_process->state() != QProcess::NotRunning)
-    m_process->kill();  // SIGKILL
+kill(processId, SIGINT);
+process.terminate();
+process.waitForFinished(500);
+if (process.state() != NotRunning) process.kill();
 ```
 
 ---
 
-# Subagent Protocol
+# Replay and Partial Handling Rules for Hosts
 
-The `Task` tool spawns subagents. Track responses via `parent_tool_use_id`:
-
-```json
-{
-  "type": "assistant",
-  "parent_tool_use_id": "toolu_abc",
-  "message": {"content": [...]}
-}
-```
-
----
-
-# Cost Tracking
-
-The `result` message includes:
-- `total_cost_usd` - Total API cost
-- `usage` - Token counts (input_tokens, output_tokens, cache_read_input_tokens)
-- `permission_denials` - List of denied tool actions
+1. Treat replayed user messages as acknowledgments, not new user intent.
+2. Deduplicate by `uuid` before rendering persistent chat bubbles.
+3. Merge `stream_event` deltas into one in-progress assistant draft per turn.
+4. Replace/complete draft on final `assistant` or `result`.
+5. Do not infer completion from lack of partial events if partial streaming is disabled.
 
 ---
 
@@ -519,23 +472,29 @@ The `result` message includes:
 DEBUG_CLAUDE_AGENT_SDK=1 claude --debug ...
 ```
 
----
-
-# SDK Protocol Discovery
-
-Inspect the TypeScript SDK for undocumented behaviors:
+Capture debug logs:
 
 ```bash
-cd /tmp && npm pack @anthropic-ai/claude-code && tar -xzf *.tgz
+claude ... --debug --debug-file /tmp/claude-debug.log
+```
 
-# Find message types
-grep -o 'type:"[^"]*"' package/cli.js | sort -u
+---
 
-# Find subtypes
-grep -o 'subtype:"[^"]*"' package/cli.js | sort -u
+# Protocol Discovery (Installed Binary)
 
-# Find control request handling
-rg 'request\.subtype===' package/cli.js
+Inspect local type and subtype surfaces for the exact installed version:
+
+```bash
+strings /path/to/claude | grep -o 'type:"[a-z_][a-z_]*"' | sort -u
+strings /path/to/claude | grep -o 'subtype:"[a-z_][a-z_]*"' | sort -u
+```
+
+Sanity-check stream-json runtime quickly:
+
+```bash
+tmpid=$(uuidgen | tr '[:upper:]' '[:lower:]')
+printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"ping"}]},"uuid":"'"$tmpid"'"}' \
+| claude -p --output-format stream-json --input-format stream-json --verbose --replay-user-messages --permission-prompt-tool stdio --session-id "$tmpid"
 ```
 
 ---
