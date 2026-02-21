@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit Skill"
+  short_description: "Conventional commits with safety checks"
+  default_prompt: "Use $commit to stage changes safely and create a conventional commit with a required body."

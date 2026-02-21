@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit Jira Skill"
+  short_description: "JIRA commit subjects with safety checks"
+  default_prompt: "Use $commit-jira to stage changes safely and create a commit with a JIRA ticket subject and required body."
