@@ -12,3 +12,4 @@ Local Codex skills for this workspace. Each skill lives in its own folder with a
 
 - Refer to a skill by name (e.g., “use plan-b”) or ask a task that matches its description.
 - Read the per-skill `README.md` for a quick summary, or open the `SKILL.md` for full instructions.
+- Resolve any relative paths mentioned by a skill (for example `scripts/...`) from that skill folder, not from the repository root.

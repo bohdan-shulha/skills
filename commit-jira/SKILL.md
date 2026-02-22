@@ -10,10 +10,16 @@ description: Create and execute Git commits with a required JIRA-style subject a
 Create safe, structured commits with deterministic checks and consistent message quality.
 Run a guard before staging, then commit using a required JIRA-style subject and required body bullets.
 
+## Path Resolution (Mandatory)
+
+- Resolve any relative path in this skill from this skill directory, not from the caller's current working directory.
+- For this skill, set `skill_dir` to the directory that contains this file (`commit-jira/SKILL.md`), then use `skill_dir/scripts/precommit_guard.py`.
+- Do not search for `scripts/precommit_guard.py` at repo root.
+
 ## Workflow
 
 1. Run safety guard:
-   - `python3 scripts/precommit_guard.py`
+   - `python3 <skill_dir>/scripts/precommit_guard.py`
 2. Abort immediately if the guard exits non-zero.
    - Do not run `git add` or `git commit` when blocked.
 3. Stage all changes only after guard passes:
