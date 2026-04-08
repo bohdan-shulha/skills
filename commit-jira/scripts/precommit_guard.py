@@ -72,6 +72,9 @@ def _is_log_path(path: str) -> bool:
     p = PurePosixPath(path)
     name = p.name.lower()
 
+    if name.endswith(".gitignore"):
+        return False
+
     if p.suffix.lower() in LOG_EXTENSIONS:
         return True
     if any(name.startswith(prefix) for prefix in DEBUG_LOG_PREFIXES):
