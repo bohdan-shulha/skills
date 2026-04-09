@@ -40,7 +40,7 @@ Abort when any path matches one of these conditions:
 1. Log-like files:
 - `*.log`, `*.out`, `*.err`
 - `npm-debug.log*`, `yarn-debug.log*`, `yarn-error.log*`, `pnpm-debug.log*`
-- any file under a `logs/` directory
+- any file under a `logs/` directory, except `.gitignore`
 
 2. Untracked high-risk binary extensions:
 - `.exe`, `.dll`, `.so`, `.dylib`, `.bin`, `.class`
