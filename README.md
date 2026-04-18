@@ -6,6 +6,7 @@ Local Copilot skills for this workspace.
 
 - `commit` — Create Conventional Commits with a required body after a pre-commit safety guard passes.
 - `commit-jira` — Create ticket-prefixed commits with a required body after the same safety guard passes.
+- `repo-wiki` — Generate and maintain a living codebase wiki, architecture docs, specs, and PRDs in `.repo-wiki/` so agents have better repository context.
 
 ## Repository layout
 
