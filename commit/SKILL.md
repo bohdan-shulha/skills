@@ -27,7 +27,7 @@ Run a guard before staging, then commit using Conventional Commits with a descri
 4. Review staged changes:
    - `git diff --cached --name-only`
    - `git diff --cached --stat`
-5. Compose commit subject and body using the format rules below.
+5. Compose commit subject and body from the actual staged diff, using the format rules below.
 6. Execute commit:
    - `git commit -m "<subject>" -m "<body>"`
 
@@ -61,6 +61,7 @@ Allowed `type` values:
 
 Require commit body:
 - Provide bullet lines summarizing key changes and impact.
+- Reflect the actual staged/uncommitted changes, not only the latest conversation turn or user message.
 - Mention migration/risk notes when relevant.
 - Use concise, factual bullets.
 

@@ -29,7 +29,7 @@ Run a guard before staging, then commit using a required JIRA-style subject and 
    - `git diff --cached --stat`
 5. Ensure the user provided a ticket number (example: `JIRA-123`).
    - If missing, stop and ask the user for the ticket number.
-6. Compose commit subject and body using the format rules below.
+6. Compose commit subject and body from the actual staged diff, using the format rules below.
 7. Execute commit:
    - `git commit -m "<subject>" -m "<body>"`
 
@@ -61,6 +61,7 @@ Use JIRA subject format:
 
 Require commit body:
 - Provide bullet lines summarizing key changes and impact.
+- Reflect the actual staged/uncommitted changes, not only the latest conversation turn or user message.
 - Mention migration/risk notes when relevant.
 - Use concise, factual bullets.
 

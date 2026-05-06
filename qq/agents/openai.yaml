@@ -1,0 +1,4 @@
+interface:
+  display_name: "QQ Skill"
+  short_description: "Read-only answers, no edits"
+  default_prompt: "Manual read-only Q&A. Inspect if needed, answer question, make no edits, ask no clarifying questions, perform no workspace changes."
