@@ -8,7 +8,7 @@ Local Copilot skills for this workspace.
 - `commit-jira` — Create ticket-prefixed commits with a required body after the same safety guard passes.
 - `qq` — Manual read-only Q&A with no edits or workspace changes.
 - `repo-wiki` — Generate and maintain a living codebase wiki, architecture docs, specs, and PRDs in `.repo-wiki/` so agents have better repository context.
-- `implement-verified` — Implement, refactor, or delete code with a coder pass plus an adversarial verifier pass that re-runs every check itself, for invariants a green test suite can hide.
+- `implement-verified` — Implement, refactor, or delete code with a coder pass plus an adversarial verifier pass that re-runs every check itself and judges against the spec, for invariants a green test suite can hide.
 
 ## Repository layout
 
