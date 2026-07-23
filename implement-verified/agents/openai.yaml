@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verified Change Skill"
+  short_description: "Coder + adversarial verifier, two passes"
+  default_prompt: "Implement the change as a two-pass workflow: an Opus coder makes it, then an independent Opus verifier re-runs every check itself and must prove the stated invariant with its own command output before it ships. Do not trust the coder's report. Skipping lint is a NO_SHIP. Judge the verdict before accepting it."
