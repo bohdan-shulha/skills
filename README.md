@@ -9,6 +9,7 @@ Local Copilot skills for this workspace.
 - `qq` — Manual read-only Q&A with no edits or workspace changes.
 - `repo-wiki` — Generate and maintain a living codebase wiki, architecture docs, specs, and PRDs in `.repo-wiki/` so agents have better repository context.
 - `implement-verified` — Implement, refactor, or delete code with a coder pass plus an adversarial verifier pass that re-runs every check itself and judges against the spec, for invariants a green test suite can hide.
+- `babysit` — Watch the pull request of the current branch, then correct failed checks, a stale or conflicted branch, and unresolved review threads until the pull request is ready.
 
 ## Repository layout
 
