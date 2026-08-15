@@ -8,4 +8,4 @@
 
 Examples:
 - `commit/SKILL.md` + `scripts/precommit_guard.py` -> `commit/scripts/precommit_guard.py`
-- `commit-jira/SKILL.md` + `scripts/precommit_guard.py` -> `commit-jira/scripts/precommit_guard.py`
+- `babysit/SKILL.md` + `scripts/pr.py` -> `babysit/scripts/pr.py`
