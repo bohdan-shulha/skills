@@ -99,7 +99,7 @@ without the approval that rule 2 requires.
 | `pr.py logs <link>` | the log excerpt of a failed job |
 | `pr.py threads [<pr>]` | the unresolved review threads |
 | `pr.py reply <thread-id> <body>` | posts a reply, prints the comment URL |
-| `pr.py watch [<pr>]` | blocks, prints one reason line |
+| `pr.py watch [<pr>]` | blocks, prints one reason line; exits 1 on a conflict, on a closed pull request, or on a `gh` failure |
 
 `pr.py checks` hides a check that passed and a check that the run skipped. It returns a check with
 the bucket `fail`, `pending`, or `cancel`. Use `--all` only for the final report.
@@ -186,6 +186,12 @@ Run the command through Bash with `run_in_background` set to `true`:
 The command blocks and polls every 30 seconds. It prints one reason line and exits when the state
 changes. It prints `timeout` after 15 minutes. The harness starts the next pass when the command
 exits.
+
+The command exits 1 and prints one line to stderr for a condition that no wait can correct:
+
+- `conflict: ...` — the branch has a conflict. Go to *Update the Branch*.
+- `state: MERGED` or `state: CLOSED` — go to *Stop Conditions*.
+- A `gh` message — `gh` failed three times in sequence. Stop and ask the user.
 
 Do not use a foreground `sleep`. The harness blocks a long foreground `sleep`.
 Do not use `gh pr checks --watch`. That command rejects `--json`, and it returns immediately when

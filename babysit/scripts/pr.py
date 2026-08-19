@@ -12,6 +12,7 @@ import time
 
 POLL_SECONDS = 30
 DEADLINE_SECONDS = 900
+GH_ERROR_LIMIT = 3
 LOG_LINES_BEFORE = 60
 LOG_LINES_AFTER = 5
 LOG_MAX_LINES = 200
@@ -51,6 +52,10 @@ mutation($thread:ID!, $body:String!) {
 
 
 class GhError(Exception):
+    pass
+
+
+class WatchError(Exception):
     pass
 
 
@@ -184,6 +189,7 @@ def _snapshot(pr: str | None) -> dict:
         }
     return {
         "state": current["state"],
+        "mergeable": current["mergeable"],
         "mergeStateStatus": current["mergeStateStatus"],
         "headRefOid": current["headRefOid"],
         "checks": {row["name"]: row["bucket"] for row in checks(pr, True)},
@@ -191,9 +197,19 @@ def _snapshot(pr: str | None) -> dict:
     }
 
 
+def _terminal(snapshot: dict) -> str | None:
+    if snapshot["state"] != "OPEN":
+        return f"state: {snapshot['state']}"
+    # GitHub can set one field before the other while it computes the pair.
+    if snapshot["mergeable"] == "CONFLICTING" or snapshot["mergeStateStatus"] == "DIRTY":
+        return (
+            f"conflict: mergeable={snapshot['mergeable']} "
+            f"merge={snapshot['mergeStateStatus']}"
+        )
+    return None
+
+
 def _difference(before: dict, after: dict) -> str | None:
-    if before["state"] != after["state"]:
-        return f"state: {after['state']}"
     if before["headRefOid"] != after["headRefOid"]:
         return f"head: {after['headRefOid'][:8]}"
     if before["mergeStateStatus"] != after["mergeStateStatus"]:
@@ -212,13 +228,25 @@ def _difference(before: dict, after: dict) -> str | None:
 
 def watch(pr: str | None) -> str:
     baseline = _snapshot(pr)
+    stop = _terminal(baseline)
+    if stop:
+        raise WatchError(stop)
+
     deadline = time.monotonic() + DEADLINE_SECONDS
+    failures = 0
     while time.monotonic() < deadline:
         time.sleep(POLL_SECONDS)
         try:
             current = _snapshot(pr)
         except GhError:
+            failures += 1
+            if failures >= GH_ERROR_LIMIT:
+                raise
             continue
+        failures = 0
+        stop = _terminal(current)
+        if stop:
+            raise WatchError(stop)
         reason = _difference(baseline, current)
         if reason:
             return reason
@@ -232,7 +260,7 @@ USAGE = """usage: pr.py <command> [args]
   logs    <link>                 failing job log excerpt
   threads [<pr>]                 unresolved review threads as JSON
   reply   <thread-id> <body>     reply to a review thread
-  watch   [<pr>]                 block until the state changes
+  watch   [<pr>]                 block until the state changes, exit 1 on a stop
 """
 
 
@@ -246,7 +274,7 @@ def main() -> int:
 
     try:
         return _dispatch(command, rest)
-    except GhError as exc:
+    except (GhError, WatchError) as exc:
         print(f"pr: {exc}", file=sys.stderr)
         return 1
 
