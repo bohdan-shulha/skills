@@ -82,7 +82,7 @@ Use a compact structure like this:
 
 ## Domain Model Template
 
-Write this page only when the repository has a real business domain.
+Write this page whenever the repository has persistent entities: a schema directory, a migrations directory, or an ORM model set.
 
 ```markdown
 # Domain Model

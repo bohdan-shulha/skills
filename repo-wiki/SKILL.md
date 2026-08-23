@@ -49,7 +49,7 @@ It is not for public marketing docs or end-user documentation.
    - Repo purpose and major entry points
    - System architecture and boundaries
    - Module, package, or service pages
-   - Domain entities and relations, when the repository has a real domain
+   - Domain entities, relations, and lifecycles, when the repository has persistent entities
    - Important flows, integrations, data paths, and operational constraints
    - Feature specs or PRD-style pages for active product areas
 7. Update surgically.
@@ -70,8 +70,11 @@ A first run costs the most and needs the most structure. Follow this order:
 1. Inventory the documentation already in the repository, as in workflow step 3.
 2. Map the workspaces, packages, or services.
 3. Choose page granularity, as in workflow step 5.
-4. Write the module and architecture pages.
-5. Write `index.md` last, when you know which pages exist.
+4. Write `domain/model.md` when the repository has persistent entities.
+   Module boundaries are visible from `ls`. A lifecycle spread across a jobs directory and an enum is not.
+   This page pays for itself first, so it comes before the module pages.
+5. Write the module and architecture pages.
+6. Write `index.md` last, when you know which pages exist.
 
 ## Default Output Set
 
@@ -79,12 +82,12 @@ A first run costs the most and needs the most structure. Follow this order:
 - `.repo-wiki/architecture/overview.md` for boundaries and major dependencies
 - `.repo-wiki/architecture/data-flow.md` for request paths, events, pipelines, or state transitions
 - `.repo-wiki/modules/<name>.md` for major packages, services, or subsystems
+- `.repo-wiki/domain/model.md` whenever the repository has persistent entities: a schema directory, a migrations directory, or an ORM model set. Skip it only for a CLI or a pure library with no store.
 - `.repo-wiki/features/<name>.md` or `.repo-wiki/prd/<name>.md` for feature intent and implementation status
 - `.repo-wiki/glossary.md` for domain terms and internal vocabulary when needed
 
-Create these two only when the repository earns them:
+Create this one only when the repository earns it:
 
-- `.repo-wiki/domain/model.md` when the repository has a real business domain. For a CLI or a library it is noise.
 - `.repo-wiki/business-rules/<topic>.md` for a domain constraint that spans modules. Both gates below must pass.
 
 ## Business Rules
@@ -114,6 +117,11 @@ The warning fires at the moment of confusion. A separate page does not.
 
 ## Content Rules
 
+Apply one test to every line: the line changes what an agent writes, or it saves the agent a search.
+Delete a line that an agent can rebuild with one grep.
+A hazard that the code hides is worth more than an inventory that the code shows.
+Every rule below follows from this test.
+
 - Prefer explicit observations from code, config, tests, and diffs over speculation.
   An observation must be durable. A measurement that you took is not a property of the code.
 - Keep pages skimmable: lead with purpose, responsibilities, entry points, dependencies, and risks.
@@ -139,8 +147,13 @@ Do not write:
 A ranking is worse than a count, because a count is at least checkable.
 A ranking inverts in silence and no reader can tell.
 
-A number stays only when it is a contract, where a mismatch is itself a bug: a port number, a retry limit, a coverage threshold, or a count that the code asserts against a registry.
-Cite the contract next to the number. A number that you observed never qualifies.
+A number stays only when the repository does not already store it.
+If a file holds the value, name the file and state the rule. Never copy the value.
+A port an agent must dial, a fixed protocol constant, or an external service limit qualifies.
+A coverage percentage, a memory measurement, a timing measurement, a file count, and a dependency version never qualify. Each one is already in a file or already stale.
+
+`git log` tells you where work happened. It does not tell you what the code is.
+Never write a ranking or a comparative from history.
 
 ```text
 Bad:
@@ -153,6 +166,19 @@ Hold every use case. One exported function per file. No classes.
 No dependency-injection container. Feature area per directory under `src/`.
 ```
 
+Numbers hide in tables. A number inside a table cell counts.
+
+```text
+Bad:
+| Package | Statements | Branches |
+|---|---|---|
+| worker  | 3.9 %      | 2.1 %    |
+
+Good:
+Each package pins its coverage ratchet in its `vitest.config.ts`.
+Raise the ratchet in that file when coverage rises.
+```
+
 Every durable fact survives. Every perishable one goes.
 
 ## Verification
@@ -160,9 +186,20 @@ Every durable fact survives. Every perishable one goes.
 Run this pass before you finish. Nothing type-checks prose.
 
 1. Extract every path in backticks. Confirm that each path resolves.
+   Expect many false positives: route templates, glob patterns, export subpaths, and image tags.
+   Classify each hit before you chase it. Real defects are the rare remainder.
    Mark a deliberate reference to a missing path as deliberate, so the next run does not flag it again.
 2. Resolve every relative link between wiki pages.
 3. Spot-check three claims against the code. Prefer a claim that carries a number.
+   Then apply the durability rule to that number: verify it, and also ask if it may stay at all.
+4. Run the durability sweep:
+
+   ```bash
+   grep -rnE '[0-9]+(\.[0-9]+)? ?%|\b[0-9]+\.[0-9]+\b|\b(most|least|lowest|highest|fewest|largest|busiest|by far|almost all)\b' .repo-wiki/
+   ```
+
+   Justify every hit against the number rule in [Durability](#durability), or delete it.
+   A number inside a table cell counts.
 
 A path that matches two files is a defect. Name the file exactly.
 
@@ -181,8 +218,8 @@ A path that matches two files is a defect. Name the file exactly.
 - Every changed subsystem in the PR or commit is reflected in at least one page.
 - Removed code no longer has live documentation pretending it still exists.
 - Every path named in the wiki exists, or is marked as deliberately absent.
-- Every number cites the contract that fixes it.
-- No page states a count, a version, or a ranking.
+- No number copies a value that a repository file stores.
+- No page states a count, a version, or a ranking. The durability sweep ran and every hit has a justification.
 - Specs distinguish shipped behavior, intended behavior, and unknowns.
 - The result makes the codebase easier for an agent to traverse.
 
