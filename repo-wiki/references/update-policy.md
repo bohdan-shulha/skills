@@ -84,5 +84,5 @@ Before finishing, check that:
 
 - the changed code paths are documented
 - stale pages or stale links were removed
-- every path in the wiki resolves
+- the verify script reports zero errors
 - the wiki remains concise enough for agents to scan quickly

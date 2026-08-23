@@ -60,6 +60,7 @@ It is not for public marketing docs or end-user documentation.
    - Link related pages.
    - Reference concrete files, directories, APIs, or commands in prose.
    - Mark unknowns explicitly instead of guessing.
+   - Ensure the agent entry file (`CLAUDE.md` or `AGENTS.md`) links `.repo-wiki/index.md`. A wiki that no agent loads is dead weight.
 9. Run the [verification](#verification) pass. Prose has no compiler.
 10. Validate the result with the [recommended layout](./references/structure.md) and [update policy](./references/update-policy.md).
 
@@ -75,6 +76,7 @@ A first run costs the most and needs the most structure. Follow this order:
    This page pays for itself first, so it comes before the module pages.
 5. Write the module and architecture pages.
 6. Write `index.md` last, when you know which pages exist.
+7. Link `.repo-wiki/index.md` from the agent entry file, as in workflow step 8.
 
 ## Default Output Set
 
@@ -185,23 +187,22 @@ Every durable fact survives. Every perishable one goes.
 
 Run this pass before you finish. Nothing type-checks prose.
 
-1. Extract every path in backticks. Confirm that each path resolves.
-   Expect many false positives: route templates, glob patterns, export subpaths, and image tags.
-   Classify each hit before you chase it. Real defects are the rare remainder.
-   Mark a deliberate reference to a missing path as deliberate, so the next run does not flag it again.
-2. Resolve every relative link between wiki pages.
-3. Spot-check three claims against the code. Prefer a claim that carries a number.
-   Then apply the durability rule to that number: verify it, and also ask if it may stay at all.
-4. Run the durability sweep:
+1. Run the verify script. Resolve the script path from this skill directory, not from the repository:
 
    ```bash
-   grep -rnE '[0-9]+(\.[0-9]+)? ?%|\b[0-9]+\.[0-9]+\b|\b(most|least|lowest|highest|fewest|largest|busiest|by far|almost all)\b' .repo-wiki/
+   python3 <skill_dir>/scripts/verify.py <repo_root>
    ```
 
-   Justify every hit against the number rule in [Durability](#durability), or delete it.
-   A number inside a table cell counts.
-
-A path that matches two files is a defect. Name the file exactly.
+   The script confirms that every backticked path and every relative link resolves.
+   It sweeps every page for percentages, decimals, counts, rankings, volatility words, change narration, dates, and issue references.
+   It skips fenced code, glob patterns, route templates, and image tags.
+2. Fix every error. A path that matches two files is a defect. Name the file exactly.
+   To keep a reference to a path that is absent on purpose, write `deliberately absent` on the same line.
+   The script then skips the paths on that line.
+3. Justify every warning against the number rule in [Durability](#durability), or delete the line.
+   A number inside a table cell counts. A rare warning is a false positive; say so and move on.
+4. Spot-check three claims against the code. Prefer a claim that carries a number.
+   Then apply the durability rule to that number: verify it, and also ask if it may stay at all.
 
 ## Incremental Update Loop
 
@@ -219,7 +220,7 @@ A path that matches two files is a defect. Name the file exactly.
 - Removed code no longer has live documentation pretending it still exists.
 - Every path named in the wiki exists, or is marked as deliberately absent.
 - No number copies a value that a repository file stores.
-- No page states a count, a version, or a ranking. The durability sweep ran and every hit has a justification.
+- No page states a count, a version, or a ranking. The verify script ran, reports zero errors, and every warning has a justification.
 - Specs distinguish shipped behavior, intended behavior, and unknowns.
 - The result makes the codebase easier for an agent to traverse.
 
