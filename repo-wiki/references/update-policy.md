@@ -14,6 +14,10 @@ Prefer information in this order:
 
 If sources conflict, document the conflict instead of guessing.
 
+Limit on source 4: use a diff to find what changed.
+Never quote a diff, a count, or a history ranking as a fact about the code.
+`git log` tells you where work happened. It does not tell you what the code is.
+
 ## Full Refresh vs Incremental Refresh
 
 - Use a full refresh for the first run, major reorganizations, or when the docs are obviously stale.
@@ -31,6 +35,7 @@ Create a page when:
 Update a page when:
 
 - public APIs, schemas, jobs, routes, commands, or user-visible behavior change
+- an entity, a relation, or a lifecycle state changes
 - responsibilities or dependencies change
 - a page is correct in spirit but stale in detail
 
@@ -44,10 +49,14 @@ Delete a page when:
 - the page duplicates another page with no unique value
 - the page is misleading and cannot be salvaged by a simple rewrite
 
+A business rule whose enforcing code is gone is deleted, not archived.
+The wiki states current truth, never history.
+
 ## Diff Mapping Heuristics
 
 - Changed top-level package or service: update its module page and usually architecture overview.
 - Changed API or schema: update feature docs and any relevant flow or contract docs.
+- Changed entity, relation, or state enum: update `domain/model.md`.
 - Changed shared library or platform config: update the consuming module pages if behavior changed.
 - File move or rename: preserve continuity by renaming docs or backlinks, not by creating duplicates.
 
@@ -59,6 +68,7 @@ That means:
 - stable filenames and headings
 - direct links between related pages
 - explicit mention of unknowns, risks, and assumptions
+- no counts, versions, or rankings
 - no stale references to removed code
 - no speculative details presented as facts
 
@@ -74,4 +84,5 @@ Before finishing, check that:
 
 - the changed code paths are documented
 - stale pages or stale links were removed
+- every path in the wiki resolves
 - the wiki remains concise enough for agents to scan quickly
